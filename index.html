@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Manager - Login</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // ⚠️ REPLACE THESE WITH YOUR SUPABASE CREDENTIALS ⚠️
+    const SUPABASE_URL = 'https://qtzkzsrbamkqqhyhgjaw.supabase.co';  // e.g., https://xxxxx.supabase.co
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0emt6c3JiYW1rcXFoeWhnamF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzOTM5NjQsImV4cCI6MjA3ODk2OTk2NH0.7ZrSKnk67XPyGfU0UCE8ARFOKGXB_r8OLgCtyInH0Bk';  // Long key from Supabase dashboard
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentUser = null;
+    let tasks = [];
+
+    // Initialize app
+    async function init() {
+      const { data: { user } } = await supabase.auth.getUser();
+      currentUser = user;
+      
+      if (user) {
+        await loadTasks();
+        renderApp();
+      } else {
+        renderAuth();
+      }
+    }
+
+    // Load tasks from database
+    async function loadTasks() {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error loading tasks:', error);
+        return;
+      }
+      
+      tasks = data || [];
+    }
+
+    // Authentication functions
+    async function signUp(email, password) {
+      const { data, error } = await supabase.auth.signUp({
+        email: email,
+        password: password,
+      });
+      
+      if (error) {
+        alert('Sign up error: ' + error.message);
+        return false;
+      }
+      
+      alert('Sign up successful! Please check your email to confirm your account.');
+      return true;
+    }
+
+    async function signIn(email, password) {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+      
+      if (error) {
+        alert('Sign in error: ' + error.message);
+        return false;
+      }
+      
+      currentUser = data.user;
+      await loadTasks();
+      renderApp();
+      return true;
+    }
+
+    async function signOut() {
+      await supabase.auth.signOut();
+      currentUser = null;
+      tasks = [];
+      renderAuth();
+    }
+
+    // Task CRUD operations
+    async function addTask(task) {
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert([{
+          user_id: currentUser.id,
+          title: task.title,
+          description: task.description,
+          deadline: task.deadline || null,
+          priority: task.priority,
+          category: task.category,
+          completed: false
+        }])
+        .select();
+      
+      if (error) {
+        console.error('Error adding task:', error);
+        alert('Error adding task');
+        return;
+      }
+      
+      await loadTasks();
+      renderApp();
+    }
+
+    async function updateTask(id, updates) {
+      const { error } = await supabase
+        .from('tasks')
+        .update(updates)
+        .eq('id', id);
+      
+      if (error) {
+        console.error('Error updating task:', error);
+        return;
+      }
+      
+      await loadTasks();
+      renderApp();
+    }
+
+    async function deleteTask(id) {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error('Error deleting task:', error);
+        return;
+      }
+      
+      await loadTasks();
+      renderApp();
+    }
+
+    // Render authentication page
+    function renderAuth() {
+      document.getElementById('app').innerHTML = `
+        <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
+          <div class="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2 text-center">Task Manager</h1>
+            <p class="text-gray-600 mb-6 text-center">Sign in to manage your tasks</p>
+            
+            <div class="mb-6">
+              <div class="flex gap-2 mb-6">
+                <button onclick="showSignIn()" id="signInTab" class="flex-1 py-2 px-4 rounded-lg bg-blue-600 text-white font-semibold">
+                  Sign In
+                </button>
+                <button onclick="showSignUp()" id="signUpTab" class="flex-1 py-2 px-4 rounded-lg bg-gray-200 text-gray-700 font-semibold">
+                  Sign Up
+                </button>
+              </div>
+              
+              <form id="authForm" onsubmit="handleAuth(event)">
+                <input
+                  type="email"
+                  id="email"
+                  placeholder="Email"
+                  required
+                  class="w-full p-3 border rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="password"
+                  id="password"
+                  placeholder="Password (min 6 characters)"
+                  required
+                  minlength="6"
+                  class="w-full p-3 border rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="submit"
+                  class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold"
+                >
+                  <span id="submitText">Sign In</span>
+                </button>
+              </form>
+            </div>
+            
+            <p class="text-xs text-gray-500 text-center">
+              Your tasks are securely stored and only visible to you
+            </p>
+          </div>
+        </div>
+      `;
+    }
+
+    let authMode = 'signin';
+
+    function showSignIn() {
+      authMode = 'signin';
+      document.getElementById('signInTab').className = 'flex-1 py-2 px-4 rounded-lg bg-blue-600 text-white font-semibold';
+      document.getElementById('signUpTab').className = 'flex-1 py-2 px-4 rounded-lg bg-gray-200 text-gray-700 font-semibold';
+      document.getElementById('submitText').textContent = 'Sign In';
+    }
+
+    function showSignUp() {
+      authMode = 'signup';
+      document.getElementById('signUpTab').className = 'flex-1 py-2 px-4 rounded-lg bg-blue-600 text-white font-semibold';
+      document.getElementById('signInTab').className = 'flex-1 py-2 px-4 rounded-lg bg-gray-200 text-gray-700 font-semibold';
+      document.getElementById('submitText').textContent = 'Sign Up';
+    }
+
+    async function handleAuth(event) {
+      event.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      
+      if (authMode === 'signin') {
+        await signIn(email, password);
+      } else {
+        await signUp(email, password);
+      }
+    }
+
+    // Render main app
+    function renderApp() {
+      const workCount = tasks.filter(t => !t.completed && t.category === 'work').length;
+      const personalCount = tasks.filter(t => !t.completed && t.category === 'personal').length;
+      const goalsCount = tasks.filter(t => !t.completed && t.category === 'goals').length;
+      const highPriorityCount = tasks.filter(t => !t.completed && t.priority === 'high').length;
+      const overdueCount = tasks.filter(t => {
+        if (!t.completed && t.deadline) {
+          const days = Math.ceil((new Date(t.deadline) - new Date()) / (1000 * 60 * 60 * 24));
+          return days < 0;
+        }
+        return false;
+      }).length;
+
+      document.getElementById('app').innerHTML = `
+        <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+          <div class="max-w-7xl mx-auto">
+            <div class="mb-8 flex items-center justify-between">
+              <div>
+                <h1 class="text-4xl font-bold text-gray-800 mb-2">Task Manager</h1>
+                <p class="text-gray-600">Welcome, ${currentUser.email}</p>
+              </div>
+              <button
+                onclick="signOut()"
+                class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
+              >
+                Sign Out
+              </button>
+            </div>
+
+            <!-- Pie Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <!-- Status Pie Chart -->
+              <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-6">Task Status Overview</h2>
+                <div class="flex flex-col items-center justify-center gap-6">
+                  <div class="relative">
+                    ${renderStatusPieChart()}
+                  </div>
+                  <div class="grid grid-cols-2 gap-3 w-full">
+                    <div class="flex items-center gap-2">
+                      <div class="w-4 h-4 rounded bg-blue-500"></div>
+                      <div>
+                        <div class="text-sm font-semibold text-gray-800">Pending</div>
+                        <div class="text-lg font-bold text-blue-600">${tasks.filter(t => !t.completed).length}</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-4 h-4 rounded bg-green-500"></div>
+                      <div>
+                        <div class="text-sm font-semibold text-gray-800">Completed</div>
+                        <div class="text-lg font-bold text-green-600">${tasks.filter(t => t.completed).length}</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-4 h-4 rounded bg-red-500"></div>
+                      <div>
+                        <div class="text-sm font-semibold text-gray-800">High Priority</div>
+                        <div class="text-lg font-bold text-red-600">${highPriorityCount}</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-4 h-4 rounded bg-orange-500"></div>
+                      <div>
+                        <div class="text-sm font-semibold text-gray-800">Overdue</div>
+                        <div class="text-lg font-bold text-orange-600">${overdueCount}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Category Pie Chart -->
+              <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-6">Tasks by Category</h2>
+                <div class="flex flex-col items-center justify-center gap-6">
+                  <div class="relative">
+                    ${renderCategoryPieChart()}
+                  </div>
+                  <div class="space-y-3 w-full">
+                    <div class="flex items-center gap-3">
+                      <div class="w-4 h-4 rounded bg-blue-500"></div>
+                      <div class="flex-1 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <span class="text-lg">💼</span>
+                          <span class="font-semibold text-gray-800">Work</span>
+                        </div>
+                        <div class="text-right">
+                          <div class="text-lg font-bold text-blue-600">${workCount}</div>
+                          <div class="text-xs text-gray-600">${getPercentage(workCount, workCount + personalCount + goalsCount)}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <div class="w-4 h-4 rounded bg-purple-500"></div>
+                      <div class="flex-1 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <span class="text-lg">🏠</span>
+                          <span class="font-semibold text-gray-800">Personal</span>
+                        </div>
+                        <div class="text-right">
+                          <div class="text-lg font-bold text-purple-600">${personalCount}</div>
+                          <div class="text-xs text-gray-600">${getPercentage(personalCount, workCount + personalCount + goalsCount)}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <div class="w-4 h-4 rounded bg-emerald-500"></div>
+                      <div class="flex-1 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <span class="text-lg">🎯</span>
+                          <span class="font-semibold text-gray-800">Goals</span>
+                        </div>
+                        <div class="text-right">
+                          <div class="text-lg font-bold text-emerald-600">${goalsCount}</div>
+                          <div class="text-xs text-gray-600">${getPercentage(goalsCount, workCount + personalCount + goalsCount)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tasks Section -->
+            <div class="bg-white rounded-lg shadow p-6">
+              <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">My Tasks</h2>
+                <button
+                  onclick="showAddTaskForm()"
+                  class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                >
+                  <span class="text-xl">+</span>
+                  New Task
+                </button>
+              </div>
+
+              <div id="taskFormContainer"></div>
+              
+              <div id="tasksList">
+                ${renderTasks()}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function getPercentage(value, total) {
+      if (total === 0) return '0%';
+      return `${Math.round((value / total) * 100)}%`;
+    }
+
+    function renderStatusPieChart() {
+      const pendingTotal = tasks.filter(t => !t.completed).length;
+      const completedTotal = tasks.filter(t => t.completed).length;
+      const total = tasks.length;
+      
+      if (total === 0) {
+        return `<svg width="220" height="220" viewBox="0 0 220 220">
+          <circle cx="110" cy="110" r="70" fill="none" stroke="#e5e7eb" stroke-width="50"/>
+          <text x="110" y="110" text-anchor="middle" dy="0.3em" class="text-3xl font-bold fill-gray-800">0</text>
+          <text x="110" y="130" text-anchor="middle" class="text-xs fill-gray-600">Total</text>
+        </svg>`;
+      }
+
+      return `<svg width="220" height="220" viewBox="0 0 220 220" class="transform -rotate-90">
+        <circle cx="110" cy="110" r="70" fill="none" stroke="#3b82f6" stroke-width="50" 
+          stroke-dasharray="${(pendingTotal/total) * 440} 440"/>
+        <circle cx="110" cy="110" r="70" fill="none" stroke="#10b981" stroke-width="50" 
+          stroke-dasharray="${(completedTotal/total) * 440} 440" 
+          stroke-dashoffset="${-(pendingTotal/total) * 440}"/>
+      </svg>
+      <div class="absolute inset-0 flex items-center justify-center">
+        <div class="text-center">
+          <div class="text-3xl font-bold text-gray-800">${total}</div>
+          <div class="text-xs text-gray-600">Total</div>
+        </div>
+      </div>`;
+    }
+
+    function renderCategoryPieChart() {
+      const workCount = tasks.filter(t => !t.completed && t.category === 'work').length;
+      const personalCount = tasks.filter(t => !t.completed && t.category === 'personal').length;
+      const goalsCount = tasks.filter(t => !t.completed && t.category === 'goals').length;
+      const total = workCount + personalCount + goalsCount;
+      
+      if (total === 0) {
+        return `<svg width="220" height="220" viewBox="0 0 220 220">
+          <circle cx="110" cy="110" r="70" fill="none" stroke="#e5e7eb" stroke-width="50"/>
+          <text x="110" y="110" text-anchor="middle" dy="0.3em" class="text-3xl font-bold fill-gray-800">0</text>
+          <text x="110" y="130" text-anchor="middle" class="text-xs fill-gray-600">Pending</text>
+        </svg>`;
+      }
+
+      const circumference = 440;
+      const workLength = (workCount / total) * circumference;
+      const personalLength = (personalCount / total) * circumference;
+      
+      return `<svg width="220" height="220" viewBox="0 0 220 220" class="transform -rotate-90">
+        <circle cx="110" cy="110" r="70" fill="none" stroke="#3b82f6" stroke-width="50" 
+          stroke-dasharray="${workLength} ${circumference}"/>
+        <circle cx="110" cy="110" r="70" fill="none" stroke="#a855f7" stroke-width="50" 
+          stroke-dasharray="${personalLength} ${circumference}" 
+          stroke-dashoffset="${-workLength}"/>
+        <circle cx="110" cy="110" r="70" fill="none" stroke="#10b981" stroke-width="50" 
+          stroke-dasharray="${(goalsCount/total) * circumference} ${circumference}" 
+          stroke-dashoffset="${-(workLength + personalLength)}"/>
+      </svg>
+      <div class="absolute inset-0 flex items-center justify-center">
+        <div class="text-center">
+          <div class="text-3xl font-bold text-gray-800">${total}</div>
+          <div class="text-xs text-gray-600">Pending</div>
+        </div>
+      </div>`;
+    }
+
+    function renderTasks() {
+      if (tasks.length === 0) {
+        return '<p class="text-center text-gray-500 py-8">No tasks yet. Create one to get started!</p>';
+      }
+
+      const pendingTasks = tasks.filter(t => !t.completed);
+      const completedTasks = tasks.filter(t => t.completed);
+
+      let html = '';
+      
+      if (pendingTasks.length > 0) {
+        html += '<div class="space-y-3">';
+        pendingTasks.forEach(task => {
+          html += renderTask(task);
+        });
+        html += '</div>';
+      }
+
+      if (completedTasks.length > 0) {
+        html += '<h3 class="text-lg font-semibold text-gray-700 mt-6 mb-3">Completed</h3>';
+        html += '<div class="space-y-3">';
+        completedTasks.forEach(task => {
+          html += renderTask(task);
+        });
+        html += '</div>';
+      }
+
+      return html;
+    }
+
+    function renderTask(task) {
+      const categoryColors = {
+        work: 'text-blue-600 bg-blue-50 border-blue-200',
+        personal: 'text-purple-600 bg-purple-50 border-purple-200',
+        goals: 'text-emerald-600 bg-emerald-50 border-emerald-200'
+      };
+
+      const priorityColors = {
+        high: 'text-red-600 bg-red-50 border-red-200',
+        medium: 'text-yellow-600 bg-yellow-50 border-yellow-200',
+        low: 'text-green-600 bg-green-50 border-green-200'
+      };
+
+      const categoryIcons = {
+        work: '💼',
+        personal: '🏠',
+        goals: '🎯'
+      };
+
+      return `
+        <div class="border rounded-lg p-4 transition ${task.completed ? 'bg-gray-50 opacity-60' : 'bg-white hover:shadow-md'}">
+          <div class="flex items-start gap-3">
+            <button
+              onclick="toggleComplete(${task.id}, ${task.completed})"
+              class="mt-1 focus:outline-none"
+            >
+              ${task.completed 
+                ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-green-600"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+                : '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400 hover:text-blue-600"><circle cx="12" cy="12" r="10"></circle></svg>'}
+            </button>
+            
+            <div class="flex-1">
+              <h3 class="font-semibold text-gray-800 ${task.completed ? 'line-through' : ''}">
+                ${task.title}
+              </h3>
+              ${task.description ? `<p class="text-sm text-gray-600 mt-1">${task.description}</p>` : ''}
+              
+              <div class="flex items-center gap-3 mt-2 flex-wrap">
+                <span class="text-xs px-2 py-1 rounded border font-medium ${categoryColors[task.category]}">
+                  ${categoryIcons[task.category]} ${task.category.toUpperCase()}
+                </span>
+                <span class="text-xs px-2 py-1 rounded border ${priorityColors[task.priority]}">
+                  ${task.priority.toUpperCase()}
+                </span>
+                ${task.deadline ? `<span class="text-xs text-gray-600">📅 ${new Date(task.deadline).toLocaleDateString()}</span>` : ''}
+              </div>
+            </div>
+            
+            <button
+              onclick="deleteTask(${task.id})"
+              class="text-gray-400 hover:text-red-600 transition"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function showAddTaskForm() {
+      document.getElementById('taskFormContainer').innerHTML = `
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg border-2 border-blue-200">
+          <form onsubmit="handleAddTask(event)">
+            <input
+              type="text"
+              id="taskTitle"
+              placeholder="Task title"
+              required
+              class="w-full p-3 border rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <textarea
+              id="taskDescription"
+              placeholder="Description (optional)"
+              class="w-full p-3 border rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows="2"
+            ></textarea>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <input
+                type="date"
+                id="taskDeadline"
+                class="p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <select
+                id="taskPriority"
+                class="p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="low">Low Priority</option>
+                <option value="medium" selected>Medium Priority</option>
+                <option value="high">High Priority</option>
+              </select>
+            </div>
+            <select
+              id="taskCategory"
+              class="w-full p-3 border rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="work">💼 Work</option>
+              <option value="personal" selected>🏠 Personal</option>
+              <option value="goals">🎯 Goals</option>
+            </select>
+            <div class="flex gap-2">
+              <button
+                type="submit"
+                class="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
+              >
+                Add Task
+              </button>
+              <button
+                type="button"
+                onclick="hideAddTaskForm()"
+                class="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    function hideAddTaskForm() {
+      document.getElementById('taskFormContainer').innerHTML = '';
+    }
+
+    async function handleAddTask(event) {
+      event.preventDefault();
+      
+      const task = {
+        title: document.getElementById('taskTitle').value,
+        description: document.getElementById('taskDescription').value,
+        deadline: document.getElementById('taskDeadline').value,
+        priority: document.getElementById('taskPriority').value,
+        category: document.getElementById('taskCategory').value
+      };
+      
+      await addTask(task);
+      hideAddTaskForm();
+    }
+
+    async function toggleComplete(id, currentStatus) {
+      await updateTask(id, { completed: !currentStatus });
+    }
+
+    // Start the app
+    init();
+  </script>
+</body>
+</html>
